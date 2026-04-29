@@ -1,0 +1,6 @@
+Regina Conventions:
+- lowercase: negative crossing
+- uppercase: positive crossing
+
+Custom Conventions:
+- right-handed (obeys RHR) is a POSITIVE crossing
