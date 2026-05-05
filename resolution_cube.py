@@ -49,7 +49,9 @@ class DSU:
                 components_map[color] = []
             components_map[color].append(i)
 
-        return components_map
+        components_list = [components_map[i] for i in components_map]
+
+        return components_list
 
 class ResolutionCube:
 
@@ -60,7 +62,7 @@ class ResolutionCube:
         self.num_vertices = 4 * self.n
 
     # ==== PARSING KNOT STRANDS -> GRAPH VERTEX ID ====
-    def get_id(self, crossing_index, port):
+    def get_vertex_id(self, crossing_index, port):
         """
         crossing i has four ports:
 
@@ -96,13 +98,13 @@ class ResolutionCube:
         idx, kind = self.strand_to_crossing_and_type(s)
 
         if kind == "_" and direction == "prev":
-            return self.get_id(idx, 0)
+            return self.get_vertex_id(idx, 0)
         if kind == "_" and direction == "next":
-            return self.get_id(idx, 1)
+            return self.get_vertex_id(idx, 1)
         if kind == "^" and direction == "prev":
-            return self.get_id(idx, 2)
+            return self.get_vertex_id(idx, 2)
         if kind == "^" and direction == "next":
-            return self.get_id(idx, 3)
+            return self.get_vertex_id(idx, 3)
 
     # ==== BUILD FRESH GRAPH ====
     def build_graph(self):
@@ -146,10 +148,10 @@ class ResolutionCube:
             lower.prev -- upper.prev
             lower.next -- upper.next
         """
-        p0 = self.get_id(crossing_index, 0)
-        p1 = self.get_id(crossing_index, 1)
-        p2 = self.get_id(crossing_index, 2)
-        p3 = self.get_id(crossing_index, 3)
+        p0 = self.get_vertex_id(crossing_index, 0)
+        p1 = self.get_vertex_id(crossing_index, 1)
+        p2 = self.get_vertex_id(crossing_index, 2)
+        p3 = self.get_vertex_id(crossing_index, 3)
 
         if bit == 0:
             return [(p0, p3), (p2, p1)]
@@ -173,7 +175,7 @@ class ResolutionCube:
     def get_circles(self, state):
         """
         Returns the actual circles of a resolution.
-        Each circle is a set/list of port ids.
+        Each circle is a set/list of vertex ids.
         """
         dsu = DSU(self.num_vertices)
 
@@ -187,13 +189,6 @@ class ResolutionCube:
                 dsu.unite(a, b)
         
         return dsu.get_components()
-    
-    def get_port_circles_map(self, state):
-        """
-        Returns a dict mapping each port # -> circle #
-        """
-        return None
-
 
     def print_cube(self):
         for state in range(2 ** self.n):
