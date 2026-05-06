@@ -165,7 +165,8 @@ class KhovanovComplex:
 
         return src_to_dest_circs_map
 
-
+    # whole point of this is to make cube circle labeling cohesive globally
+    # so later when we build the sparse matrix
     def apply_edge_map(self, state, crossing, labels):
         """
         Apply edge map to one basis vector:
@@ -191,7 +192,7 @@ class KhovanovComplex:
                     if src_circ == a or src_circ == b:
                         continue # this was a CHANGED circle
                     dest_circ = next(iter(dest_circs))
-                    dest_labels[dest_circ] = labels[src_circ]
+                    dest_labels[dest_circ] = labels[src_circ] # inherits label from src_circ
                 dest_labels[c] = merged_label # Handle changed circles
                 dest_results.append((coeff, tuple(dest_labels)))
             
@@ -212,6 +213,8 @@ class KhovanovComplex:
 
         return dest_results
 
+    # see Bar-Natan p.343  ==> we need this so every square face anticommutes
+    # d_j d_i = - d_i d_j
     def cube_sign(self, state, crossing):
         ones_before = (state & ((1<<crossing)-1)).bit_count()
         return -1 if ones_before%2 else 1
@@ -280,7 +283,7 @@ class KhovanovComplex:
             print(f"rank H_{degree} = {self.get_free_rank(degree)}")
     
 
-K = KhovanovComplex("BCA")
+K = KhovanovComplex("bCdA")
 
 # for state in range(1 << K.n):
 #     for crossing in range(K.n):
