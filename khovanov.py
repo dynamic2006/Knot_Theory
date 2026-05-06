@@ -283,7 +283,7 @@ class KhovanovComplex:
             print(f"rank H_{degree} = {self.get_free_rank(degree)}")
     
 
-# K = KhovanovComplex("bCdA")
+K = KhovanovComplex("bCdA")
 # K = KhovanovComplex("bfjihgaedc") # stress test
 
 # for state in range(1 << K.n):
