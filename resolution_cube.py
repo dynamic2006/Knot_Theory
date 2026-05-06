@@ -196,5 +196,5 @@ class ResolutionCube:
             print(bits, self.get_circles(state))
 
 
-K = ResolutionCube("BCA")
-K.print_cube()
+# K = ResolutionCube("BCA")
+# K.print_cube()

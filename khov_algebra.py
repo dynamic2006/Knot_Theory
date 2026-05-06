@@ -5,17 +5,17 @@ def convert(label: str):
         return 1
 
 def multiply(a, b):
-    if a == '1' and b == '1':
+    if a == 0 and b == 0:
         return [(1, convert('1'))]
-    elif a == '1' and b == 'X':
+    elif a == 0 and b == 1:
         return [(1, convert('X'))]
-    elif a == 'X' and b == '1':
+    elif a == 1 and b == 0:
         return [(1, convert('X'))]
     else:
         return []
 
 def comultiply(a):
-    if a == '1':
+    if a == 0:
         return [(1, (convert('X'), convert('1'))), 
                 (1, (convert('1'), convert('X')))]
     else:

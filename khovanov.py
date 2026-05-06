@@ -1,6 +1,58 @@
 from resolution_cube import ResolutionCube
 from khov_algebra import multiply, comultiply
 
+# being able to index on row and col makes life easier
+# so that we can just do cols[col][row] = coeff
+def sparse_entries_to_cols(M, num_cols):
+    """
+    Convert: M[col] = [(row, coeff), ...]
+    into: cols[col] = {row: coeff}
+    """
+    cols = []
+    for col in range(num_cols):
+        col_dict = {}
+        for row, coeff in M.get(col, []):
+            col_dict[row] = col_dict.get(row, 0) + coeff
+            if col_dict[row] == 0:
+                del col_dict[row] # need to delete so pivoting works
+        cols.append(col_dict)
+    return cols
+
+# compute how many columns are linearly indep
+def sparse_rank_q(cols):
+    """
+    Sparse Column Reduction
+    Computes rank over Q
+    cols: list of dicts {row : coeff}
+    """
+    pivots = {} # carrying out gaussian elimination
+    rank = 0
+
+    for col in cols:
+        col = dict(col) # copy so we don't modify og
+        while col:
+            pivot_row = max(col.keys())
+            # if we find a new indep col
+            if pivot_row not in pivots:
+                pivots[pivot_row] = col
+                rank+=1
+                break
+            
+            # otherwise reduce
+            pivot_col = pivots[pivot_row]
+            a = col[pivot_row]
+            b = pivot_col[pivot_row]
+
+            # b*col - a*pivot_col ==> col
+            new_col = {}
+            for r, v in col.items():
+                new_col[r] = new_col.get(r, 0) + b*v
+            for r, v in pivot_col.items():
+                new_col[r] = new_col.get(r,0) - a*v
+            col = {r : v for r,v in new_col.items() if v != 0}
+    
+    return rank
+
 class KhovanovComplex:
     
     def __init__(self, dtcode):
@@ -77,7 +129,7 @@ class KhovanovComplex:
         """
         Returns details for what circles are involved in crossing resolution.
         merge edge: ("merge", src_circ_a, src_circ_b, dest_circ)
-        split edge: ("merge", src_circ, dest_circ_a, dest_circ_b)
+        split edge: ("split", src_circ, dest_circ_a, dest_circ_b)
         """
         dest_state = self.get_state_from_resolving_crossing(state, crossing)
         kind = self.get_edge_kind(state, crossing)
@@ -123,18 +175,138 @@ class KhovanovComplex:
         """
         dest_state = self.get_state_from_resolving_crossing(state, crossing)
         info = self.get_edge_map_info(state, crossing)
-
         kind = info[0]
+        src_to_dest_circs_map = self.get_src_to_dest_circs_map(state, crossing)
+        dest_circ_count = len(self.cache_state_circles(dest_state))
+
+        dest_results = []
 
         if kind == "merge":
             _, a, b, c = info
-            outputs = multiply(labels[a], )
+            results = multiply(labels[a], labels[b])
+            for coeff, merged_label in results:
+                dest_labels = [None]*dest_circ_count
+                # Handle unchanged circles
+                for src_circ, dest_circs in src_to_dest_circs_map.items():
+                    if src_circ == a or src_circ == b:
+                        continue # this was a CHANGED circle
+                    dest_circ = next(iter(dest_circs))
+                    dest_labels[dest_circ] = labels[src_circ]
+                dest_labels[c] = merged_label # Handle changed circles
+                dest_results.append((coeff, tuple(dest_labels)))
+            
+        if kind == "split":
+            _, a, b, c = info
+            results = comultiply(labels[a])
+            for coeff, split_label in results:
+                dest_labels = [None]*dest_circ_count
+                # Handle unchanged circles
+                for src_circ, dest_circs in src_to_dest_circs_map.items():
+                    if src_circ == a:
+                        continue # this was a CHANGED circle
+                    dest_circ = next(iter(dest_circs))
+                    dest_labels[dest_circ] = labels[src_circ]
+                dest_labels[b] = split_label[0]
+                dest_labels[c] = split_label[1]
+                dest_results.append((coeff, tuple(dest_labels)))
+
+        return dest_results
+
+    def cube_sign(self, state, crossing):
+        ones_before = (state & ((1<<crossing)-1)).bit_count()
+        return -1 if ones_before%2 else 1
+
+    def differential_sparse(self, degree):
+        """
+        Builds sparse matrix for degree: C_degree -> C_{degree+1}
+        Returns : M, num_rows, num_cols
+        M[col] = list of (row, coeff)
+        """
+        src_basis = self.get_chain_basis_for_degree(degree)
+        dest_basis = self.get_chain_basis_for_degree(degree+1)
+
+        dest_basis_to_rownum_map = {}
+        for row, basis_vector in enumerate(dest_basis):
+            dest_basis_to_rownum_map[basis_vector] = row
+
+        M = {}
+
+        for col, (state, labels) in enumerate(src_basis):
+            entries = []
+            for crossing in range(self.n):
+                # if valid edge in cube
+                if((state>>crossing) & 1) == 0:
+                    dest_state = self.get_state_from_resolving_crossing(state, crossing)
+                    dest_results = self.apply_edge_map(state, crossing, labels)
+
+                    sign = self.cube_sign(state, crossing)
+                    for coeff, dest_labels in dest_results:
+                        dest_basis_vector = (dest_state, dest_labels)
+                        row = dest_basis_to_rownum_map[dest_basis_vector]
+                        entries.append((row, sign*coeff))
+            if entries:
+                M[col] = entries
+        
+        return M, len(dest_basis), len(src_basis)
+
+    def rank_differential_q(self, degree):
+        M, num_rows, num_cols = self.differential_sparse(degree)
+        cols = sparse_entries_to_cols(M, num_cols)
+        return sparse_rank_q(cols)
+
+    def get_free_rank(self, degree):
+        """
+        Free rank of H_degree
+        [IGNORING TORSION]
+        """
+        C_dim = len(self.get_chain_basis_for_degree(degree))
+        
+        # check if we've gone off the right edge
+        if degree < self.n:
+            rank_d_i = self.rank_differential_q(degree)
+        else:
+            rank_d_i = 0
+        
+        # check if going left goes off the left edge
+        if degree > 0:
+            rank_d_prev = self.rank_differential_q(degree-1)
+        else:
+            rank_d_prev = 0
+        
+        return C_dim - rank_d_i - rank_d_prev
+    
+    def print_free_rank(self):
+        for degree in range(self.n+1):
+            print(f"rank H_{degree} = {self.get_free_rank(degree)}")
     
 
 K = KhovanovComplex("BCA")
 
-for state in range(1 << K.n):
-    for crossing in range(K.n):
-        if ((state >> crossing) & 1) == 0:
-            bits = format(state, f"0{K.n}b")
-            print(bits, crossing, K.get_edge_map_info(state, crossing))
+# for state in range(1 << K.n):
+#     for crossing in range(K.n):
+#         if ((state >> crossing) & 1) == 0:
+#             bits = format(state, f"0{K.n}b")
+#             print(bits, crossing, K.get_edge_map_info(state, crossing))
+
+
+# for state in range(1 << K.n):
+#     for crossing in range(K.n):
+#         if ((state >> crossing) & 1) == 0:
+#             for basis in K.get_basis_for_state(state):
+#                 print(
+#                     basis,
+#                     "->",
+#                     K.apply_edge_map(state, crossing, basis[1])
+#                 )
+
+
+# for degree in range(K.n):
+#     M, rows, cols = K.differential_sparse(degree)
+
+#     print(f"d_{degree}: {rows} x {cols}")
+#     print(M)
+
+for degree in range(K.n):
+    print(f"rank d_{degree} =", K.rank_differential_q(degree))
+
+K.print_free_rank()
