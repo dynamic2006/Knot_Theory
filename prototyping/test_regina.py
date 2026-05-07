@@ -1,6 +1,6 @@
 import regina
 
-K = regina.Link.fromDT("BCA")
+K = regina.Link.fromDT("bca")
 print(K)
 print(K.size())
 

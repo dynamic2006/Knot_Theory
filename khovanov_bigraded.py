@@ -1,3 +1,4 @@
+import regina
 from resolution_cube import ResolutionCube
 from khov_algebra import multiply, comultiply
 
@@ -55,13 +56,20 @@ def sparse_rank_q(cols):
 
 class KhovanovComplex:
     
-    def __init__(self, dtcode):
-        self.cube = ResolutionCube(dtcode)
+    def __init__(self, code):
+        self.cube = ResolutionCube(code)
         self.n = self.cube.n
         self.state_circles = {}
         self.state_basis = {}
-        self.n_pos = self.n
+
+        self.n_pos = 0
         self.n_neg = 0
+
+        for c in range(self.n):
+            if self.cube.knot.crossing(c).sign() > 0:
+                self.n_pos += 1
+            else:
+                self.n_neg += 1
 
     # A basis vector (state, labels)
     # has bigrading (i,j)
@@ -77,7 +85,7 @@ class KhovanovComplex:
         k = len(labels)
         num_X = sum(labels)
         label_degree = k - 2*num_X
-        return label_degree + i - self.n_pos - 2*self.n_neg
+        return -(label_degree + i + self.n_pos - 2*self.n_neg)
 
     def cache_state_circles(self, state):
         """
@@ -386,9 +394,15 @@ class KhovanovComplex:
                 r = self.get_kh_rank(i, j)
                 if r != 0:
                     print(f"rank Kh^({i},{j}) = {r}")
-    
 
-K = KhovanovComplex("BCA")
-K.print_free_rank()
-print("========")
+
+K = KhovanovComplex("eabcdbadcvbZa")
+
+print(K.cube.knot)
+print("n =", K.n)
+print("n_pos =", K.n_pos, "n_neg =", K.n_neg)
+
+for state in range(1 << K.n):
+    print(format(state, f"0{K.n}b"), "circles =", K.cube.count_circles(state))
+
 K.print_bigraded_homology()

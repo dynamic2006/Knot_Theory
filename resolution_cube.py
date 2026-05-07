@@ -56,8 +56,8 @@ class DSU:
 class ResolutionCube:
 
     # ==== CONSTRUCTOR ====
-    def __init__(self, dtcode: str):
-        self.knot = regina.Link.fromDT(dtcode)
+    def __init__(self, code: str):
+        self.knot = regina.Link.fromSig(code)
         self.n = self.knot.size()
         self.num_vertices = 4 * self.n
 
@@ -140,11 +140,11 @@ class ResolutionCube:
             2 = upper.prev
             3 = upper.next
 
-        0-resolution:
+        0-resolution (+) / 1-resolution (-):
             lower.prev -- upper.next
             upper.prev -- lower.next
 
-        1-resolution:
+        0-resolution (-) / 1-resolution (+):
             lower.prev -- upper.prev
             lower.next -- upper.next
         """
@@ -153,10 +153,18 @@ class ResolutionCube:
         p2 = self.get_vertex_id(crossing_index, 2)
         p3 = self.get_vertex_id(crossing_index, 3)
 
-        if bit == 0:
-            return [(p0, p3), (p2, p1)]
+        # print(self.knot.crossing(crossing_index).sign())
+        if self.knot.crossing(crossing_index).sign() == 1:
+            # print("HERE")
+            if bit == 0:
+                return [(p0, p3), (p2, p1)]
+            else:
+                return [(p0, p2), (p1, p3)]
         else:
-            return [(p0, p2), (p1, p3)]
+            if bit == 1:
+                return [(p0, p3), (p2, p1)]
+            else:
+                return [(p0, p2), (p1, p3)]
 
     def count_circles(self, state):
         dsu = DSU(self.num_vertices)
