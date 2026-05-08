@@ -6,6 +6,7 @@ cd .../Knot_Theory/homology_calculator
 python khovanov.py
 python jones.py
 ```
-no CLI rn -- might add it later
-alter the calls directly in the code files and run files
-see `# Usage` comments
+- no CLI rn -- might add it later
+- alter the calls directly in the code files and run files
+- see `# Usage` comments
+- knots.txt has signatures for common knots (credit to regina for database: https://regina-normal.github.io/data.html)
