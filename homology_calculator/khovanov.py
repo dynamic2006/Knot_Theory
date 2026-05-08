@@ -396,7 +396,7 @@ class KhovanovComplex:
                     print(f"rank Kh^({i},{j}) = {r}")
 
 
-K = KhovanovComplex("gabcadebcfdefvvpd")
+K = KhovanovComplex("eabcdbadcvbZa")
 
 print(K.cube.knot)
 print("n =", K.n)
