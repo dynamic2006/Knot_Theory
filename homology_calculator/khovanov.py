@@ -1,5 +1,5 @@
 import regina
-from cube import ResolutionCube
+from cube import Cube
 from kalgebra import multiply, comultiply
 
 # being able to index on row and col makes life easier
@@ -57,7 +57,7 @@ def sparse_rank_q(cols):
 class KhovanovComplex:
     
     def __init__(self, code):
-        self.cube = ResolutionCube(code)
+        self.cube = Cube(code)
         self.n = self.cube.n
         self.state_circles = {}
         self.state_basis = {}

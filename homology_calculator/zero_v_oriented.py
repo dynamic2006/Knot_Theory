@@ -1,5 +1,5 @@
 import regina
-from cube import ResolutionCube
+from homology_calculator.old_cube import ResolutionCube
 
 knot_sigs = ["gabcadebcfdefvvpd"]
 

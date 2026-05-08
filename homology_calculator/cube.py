@@ -1,208 +1,151 @@
 import regina
+from utils import *
 
 class DSU:
+
     def __init__(self, n):
         self.n = n
-        self.parent = list(range(n))
-        self.sizes = list(1 for _ in range(n))
-
+        self.parents = []
+        self.sizes = []
+        for i in range(n):
+            self.parents.append(i)
+            self.sizes.append(1)
+    
     def find(self, x):
-        """
-        Find root for x / color of x
-        """
-        if self.parent[x] != x:
-            self.parent[x] = self.find(self.parent[x])
-        return self.parent[x]
-
-    def unite(self, a, b):
-        """
-        Returns whether the merge changed connectivity
-        """
-        ra = self.find(a)
-        rb = self.find(b)
-        if ra != rb:
-            if(self.sizes[ra] < self.sizes[rb]):
-                self.sizes[rb] += self.sizes[ra]
-                self.parent[ra] = self.parent[rb]
-            else:
-                self.sizes[ra] += self.sizes[rb]
-                self.parent[rb] = self.parent[ra]
-            return True
-        else:
+        if self.parents[x] != x:
+            self.parents[x] = self.find(self.parents[x])
+        return self.parents[x]
+    
+    def unite(self, x, y):
+        x_root = self.find(x)
+        y_root = self.find(y)
+        if x_root == y_root:
             return False
-        
-    def connected(self, a, b):
-        """
-        Return whether a and b are in the same connected component
-        """
-        return self.find(a) == self.find(b)
-
+        if self.sizes[x_root] < self.sizes[y_root]:
+            x_root, y_root = y_root, x_root
+        self.sizes[x_root] += self.sizes[y_root]
+        self.parents[y_root] = x_root
+        return True
+    
+    def connected(self, x, y):
+        return self.find(x) == self.find(y)
+    
     def count_components(self):
-        unique_colors = {self.find(i) for i in range(self.n)} # aka components
-        return len(unique_colors)
-
+        roots = {self.find(i) for i in range(self.n)}
+        return len(roots)
+    
     def get_components(self):
-        components_map = {}
+        comps = {}
         for i in range(self.n):
-            color = self.find(i)
-            if color not in components_map:
-                components_map[color] = []
-            components_map[color].append(i)
+            root = self.find(i)
+            if root not in comps:
+                comps[root] = []
+            comps[root].append(i)
+        return [comps[key] for key in comps]
 
-        components_list = [components_map[i] for i in components_map]
+class Cube:
 
-        return components_list
+    def __init__(self, code):
+        self.knot = get_knot(code)
+        self.crossings = self.knot.size()
+        self.n = 4*self.crossings
 
-class ResolutionCube:
-
-    # ==== CONSTRUCTOR ====
-    def __init__(self, code: str):
-        self.knot = regina.Link.fromSig(code)
-        self.n = self.knot.size()
-        self.num_vertices = 4 * self.n
-
-    # ==== PARSING KNOT STRANDS -> GRAPH VERTEX ID ====
-    def get_vertex_id(self, crossing_index, port):
+    # ==== helper functions ====
+    
+    def get_knot(self):
+        return self.knot
+    
+    # ==== the good stuff ====
+    
+    def build_fresh_graph(self):
         """
-        crossing i has four ports:
+        Builds and returns a fresh graph for the knot.
+        Graph has no resolutions. Note this means the crossing endpoints are all disjoint, so this is NOT a picture of the knot.
 
-            0 = lower.prev side
-            1 = lower.next side
-            2 = upper.prev side
-            3 = upper.next side
-        """
-        return 4 * crossing_index + port
-
-    def strand_to_crossing_and_type(self, s):
-        """
-        Return (crossing_index, kind), where kind is '^' or '_'.
-        """
-        text = str(s)
-        kind = text[0]
-        idx = int(text[1:])
-        return idx, kind
-
-    def strand_endpoint_to_id(self, s, direction):
-        """
-        Convert a Regina strand endpoint into the corresponding 4-port vertex.
-
-        direction is either:
-            "prev" or "next"
-
-        For crossing i:
-            _i.prev  -> port 0
-            _i.next  -> port 1
-            ^i.prev  -> port 2
-            ^i.next  -> port 3
-        """
-        idx, kind = self.strand_to_crossing_and_type(s)
-
-        if kind == "_" and direction == "prev":
-            return self.get_vertex_id(idx, 0)
-        if kind == "_" and direction == "next":
-            return self.get_vertex_id(idx, 1)
-        if kind == "^" and direction == "prev":
-            return self.get_vertex_id(idx, 2)
-        if kind == "^" and direction == "next":
-            return self.get_vertex_id(idx, 3)
-
-    # ==== BUILD FRESH GRAPH ====
-    def build_graph(self):
-        """
-        Add in the original edges to build the graph
-        For each local crossing, consider each strand (over/under). Connect:
-        - current strand's next-side port  -- current strand's prev-side port at next crossing
-        - note: we don't actually connect the prev and next sides of each strand
-        why? because DSU can't break edges! so just leave this part for DSU
-
-        Returns graph edge list
+        Returns edge list for graph.
         """
         edges = []
-
-        for i in range(self.n):
-            cross = self.knot.crossing(i)
-
-            for strand in [cross.upper(), cross.lower()]:
-                start = self.strand_endpoint_to_id(strand, "next")
-                end = self.strand_endpoint_to_id(strand.next(), "prev")
-                edges.append((start, end))
+        for crossingidx in range(self.crossings):
+            
+            crossing = self.knot.crossing(crossingidx)
+            
+            # handle the upper strand
+            # connect the outgoing (next) upper strand at this crossing
+            # to wherever it is incoming (prev) at its next crossing
+            upperstrand = crossing.upper()
+            strand_to_crossing_and_type
+            uppersrc = strand_endpoint_to_vertexidx(upperstrand, "next")
+            upperdest = strand_endpoint_to_vertexidx(upperstrand.next(), "prev")
+            edges.append((uppersrc, upperdest))
+            
+            # handle the lower strand
+            # connect the outgoing (next) lower strand at this crossing
+            # to wherever it is incoming (prev) at its next crossing
+            lowerstrand = crossing.lower()
+            lowersrc = strand_endpoint_to_vertexidx(lowerstrand, "next")
+            lowerdest = strand_endpoint_to_vertexidx(lowerstrand.next(), "prev")
+            edges.append((lowersrc, lowerdest))
 
         return edges
-
-    # ==== HANDLE 0/1 SMOOTHING ====
-    def smoothing_edges(self, crossing_index, bit):
+    
+    def smooth_crossing(self, crossingidx, restype):
         """
-        Internal smoothing edges at one crossing.
+        crossingidx: crossing idx of the crossing to resolve
+        restype: resolution type. 0/1 value for 0 or 1 resolution respectively.
 
-        Ports:
-            0 = lower.prev
-            1 = lower.next
-            2 = upper.prev
-            3 = upper.next
-
-        0-resolution (+) / 1-resolution (-):
-            lower.prev -- upper.next
-            upper.prev -- lower.next
-
-        0-resolution (-) / 1-resolution (+):
-            lower.prev -- upper.prev
-            lower.next -- upper.next
+        Returns:
+            list of edges to add to graph to simulate desired smoothing
         """
-        p0 = self.get_vertex_id(crossing_index, 0)
-        p1 = self.get_vertex_id(crossing_index, 1)
-        p2 = self.get_vertex_id(crossing_index, 2)
-        p3 = self.get_vertex_id(crossing_index, 3)
+        
+        p0 = crossingport_to_vertexidx(crossingidx, 0)
+        p1 = crossingport_to_vertexidx(crossingidx, 1)
+        p2 = crossingport_to_vertexidx(crossingidx, 2)
+        p3 = crossingport_to_vertexidx(crossingidx, 3)
 
-        # print(self.knot.crossing(crossing_index).sign())
-        if self.knot.crossing(crossing_index).sign() == 1:
-            # print("HERE")
-            if bit == 0:
-                return [(p0, p3), (p2, p1)]
+        if self.knot.crossing(crossingidx).sign() == 1:
+            # positive crossing -- oriented res is zero res
+            if restype == 0:
+                return [(p0, p3), (p1, p2)]
             else:
                 return [(p0, p2), (p1, p3)]
         else:
-            if bit == 1:
-                return [(p0, p3), (p2, p1)]
+            # negative crossing -- oriented res is one res
+            if restype == 1:
+                return [(p0, p3), (p1, p2)]
             else:
                 return [(p0, p2), (p1, p3)]
-
-    def count_circles(self, state):
-        dsu = DSU(self.num_vertices)
-
-        for a, b in self.build_graph():
+            
+    def build_state(self, state):
+        dsu = DSU(self.n)
+        edges = self.build_fresh_graph()
+        for a, b in edges:
             dsu.unite(a, b)
-
-        for i in range(self.n):
-            bit = (state >> i) & 1
-
-            for a, b in self.smoothing_edges(i, bit):
+        for crossingidx in range(self.crossings):
+            restype = (state>>crossingidx) & 1
+            res_edges = self.smooth_crossing(crossingidx, restype)
+            for a, b in res_edges:
                 dsu.unite(a, b)
-
+        return dsu
+    
+    def count_circles(self, state):
+        dsu = self.build_state(state)
         return dsu.count_components()
     
     def get_circles(self, state):
-        """
-        Returns the actual circles of a resolution.
-        Each circle is a set/list of vertex ids.
-        """
-        dsu = DSU(self.num_vertices)
-
-        for a, b in self.build_graph():
-            dsu.unite(a,b)
-        
-        for i in range(self.n):
-            bit = (state >> i) & 1
-
-            for a, b in self.smoothing_edges(i, bit):
-                dsu.unite(a, b)
-        
+        dsu = self.build_state(state)
         return dsu.get_components()
 
+    def print_state(self, state):
+        bits = format(state, f"0{self.crossings}b")
+        circles = self.get_circles(state)
+        print(bits, len(circles), circles)
+
     def print_cube(self):
-        for state in range(2 ** self.n):
-            bits = format(state, f"0{self.n}b")
-            print(bits, self.get_circles(state))
+        states = [i for i in range(2**self.crossings)]
+        sorted_states = sorted(states, key=lambda x: x.bit_count())
+        for state in sorted_states:
+            self.print_state(state)
+            print()
 
-
-# K = ResolutionCube("BCA")
-# K.print_cube()
+K = Cube("eabcdbadcvbZa")
+K.print_cube()
