@@ -14,6 +14,8 @@ for i in range(K.size()):
     u = c.upper()
     l = c.lower()
 
+    print(u)
+
     print("INFORMATION")
     print("upper next:", u.next())
     print("upper prev:", u.prev())
