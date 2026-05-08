@@ -200,6 +200,6 @@ class Jones:
             self.print_jones_inverse()
 
 # Usage
-K = KhovanovComplex("dabcabcv-")
-J = Jones(K)
-J.print_jones()
+# K = KhovanovComplex("eabcdbadcvbZa")
+# J = Jones(K)
+# J.print_jones()

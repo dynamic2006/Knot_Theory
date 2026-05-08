@@ -268,6 +268,118 @@ class KhovanovComplex:
                         del col[r] # sparsify!
         
         return len(pivots)
+    
+    def get_differential_generators(self, M):
+        """
+        M is a sparse matrix, where entries are fractions
+        M[col][row] = coeff
+
+        Proceed via gaussian elimination over Q.
+        
+        Returns:
+            rank, pivots, pivot_generators, kernel_generators
+        """
+
+        pivots = {}
+        
+        pivot_generators = {}
+        # pivot_generators[pivot_row] = {key: colidx of M, val: coeff}
+        kernel_generators = []
+        # kernel_generators = [{key: colidx of M, val: coeff}]
+        # combining all entries in each list element gives a kernel element
+
+        for colidx, col in enumerate(M):
+            col = dict(col) # copy construct so we don't mess with og
+            gen = {colidx : Fraction(1)} # before any elim, col is just og basis vector at M[colidx]
+            while col:
+                pivot_row = max(col.keys())
+                pivot_coeff = col[pivot_row]
+                if pivot_row not in pivots:
+                    # found a new independent
+                    inv = Fraction(1,1) / pivot_coeff
+                    for r in list(col.keys()):
+                        col[r] *= inv
+                        if col[r] == 0:
+                            del col[r] # sparsify!
+                    for k in list(gen.keys()):
+                        gen[k] *= inv
+                        if gen[k] == 0:
+                            del gen[k] # sparsify!
+                    pivots[pivot_row] = col
+                    pivot_generators[pivot_row] = gen
+                    break
+                
+                pivot_col = pivots[pivot_row]
+                pivot_gen = pivot_generators[pivot_row]
+                factor = col[pivot_row]
+                
+                for r, val in pivot_col.items():
+                    col[r] = col.get(r, Fraction(0)) - factor * val
+                    if col[r] == 0:
+                        del col[r] # sparsify!
+                for k, val in pivot_gen.items():
+                    gen[k] = gen.get(k, Fraction(0)) - factor * val
+                    if gen[k] == 0:
+                        del gen[k] # sparsify!
+            
+            # if col reduced to zero, then this combo is in kernel
+            if not col:
+                kernel_generators.append(gen)
+        
+        return len(pivots), pivots, pivot_generators, kernel_generators
+    
+    def quotient_cycles_by_boundaries(self, cycles, boundaries):
+        """
+        cycles: list of sparse vectors in C^{i,j}
+        boundaries: list of sparse vectors in C^{i,j}
+
+        Returns homology representatives (generators): cycles mod boundaries.
+        """
+
+        pivots = {}
+        survivors = []
+
+        # First put all boundaries into the pivot table
+        for b in boundaries:
+            v = dict(b) # copy so we don't mess with og
+            while v:
+                pivot = max(v.keys())
+                coeff = v[pivot]
+                if pivot not in pivots:
+                    inv = Fraction(1,1) / coeff
+                    for k in list(v.keys()):
+                        v[k] *= inv
+                        if v[k] == 0:
+                            del v[k] # sparsify!
+                    pivots[pivot] = v
+                    break
+                for k, val in pivots[pivot]:
+                    v[k] = v.get(k, Fraction(0)) + (-coeff)*val
+                    if v[k] == 0:
+                        del v[k] # sparsify!
+        
+        # Next reduce cycles modulo those boundaries
+        for c in cycles:
+            v = dict(c) # copy so we don't mess with og
+            while v:
+                pivot = max(v.keys())
+                coeff = v[pivot]
+                if pivot not in pivots:
+                    # this cycle is NOT a boundary, so it SURVIVES
+                    inv = Fraction(1,1) / coeff
+                    for k in list(v.keys()):
+                        v[k] *= inv
+                        if v[k] == 0:
+                            del v[k] # sparsify!
+                    pivots[pivot] = v
+                    survivors.append(v)
+                    break
+                for k, val in pivots[pivot].items():
+                    v[k] = v.get(k, Fraction(0)) + (-coeff)*val
+                    if v[k] == 0:
+                        del v[k] # sparsify!
+        
+        return survivors
 
     # ==== HOMOLOGY CALCULATION ====
     
@@ -280,13 +392,53 @@ class KhovanovComplex:
 
         return Cij_dim - rank_d_cur - rank_d_prev
     
-    def print_homology(self):
+    def homology_generators(self, i, j):
+        
+        d_cur, cCur, cNext = self.build_differential_sparse_matrix(i,j)
+        d_prev, cPrev, _ = self.build_differential_sparse_matrix(i-1,j)
+
+        _, _, _, cycles = self.get_differential_generators(d_cur)
+        _, boundary_cols, _, _ = self.get_differential_generators(d_prev)
+
+        boundaries = list(boundary_cols.values())
+
+        survivors = self.quotient_cycles_by_boundaries(cycles, boundaries)
+        return survivors, cCur
+    
+    def print_homology(self, i, j):
+        r = self.homology_rank(i,j)
+        if r != 0:
+            print(f"rank Kh^({i},{j}) = {r}")
+
+    def print_homology_generators(self, i, j):
+        survivors, cCur = self.homology_generators(i,j)
+        if len(survivors) == 0:
+            return
+        print(f"Kh^({i},{j}) has {len(survivors)} generators")
+        for genidx, gen in enumerate(survivors):
+            print(f"generator {genidx}:")
+            for basis_idx, coeff in sorted(gen.items()):
+                state, labeling = cCur[basis_idx]
+                bits = format(state, f"0{self.crossings}b")
+                prettylabeling = [None]*len(labeling)
+                for i, val in enumerate(labeling):
+                    if val == 0:
+                        prettylabeling[i] = '1'
+                    else:
+                        prettylabeling[i] = 'X'
+                print(f"  {coeff} * state={bits}, labeling={prettylabeling}")
+        print()
+
+    def print_full_homology(self):
         for i, js in sorted(self.quantum_gradings_in_degree.items()):
             for j in sorted(js):
-                r = self.homology_rank(i, j)
-                if r != 0:
-                    print(f"rank Kh^({i},{j}) = {r}")
+                self.print_homology(self, i, j)
+    
+    def print_full_homology_generators(self):
+        for i, js in sorted(self.quantum_gradings_in_degree.items()):
+            for j in sorted(js):
+                self.print_homology_generators(i, j)
 
 # Usage
-# K = KhovanovComplex("dabcabcv-")
-# K.print_homology()
+# K = KhovanovComplex("eabcdbadcvbZa")
+# K.print_full_homology_generators()
