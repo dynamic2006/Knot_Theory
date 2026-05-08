@@ -5,8 +5,9 @@ Custom Conventions:
 Khovanov <=> Jones Polynomial:
 \sum_{i,j} (-1)^i q^j \dim{Kh^{i,j}(L)} = (q + q^{-1})J(q^2)
 ==> see Dror Bar-Natan's algo (p.339) trefoil example
-==> we use Knot Atlas Conventions
+==> then there's also Katlas Conventions
 ==> Note that these conventions are kinda opposite...Bar-Natan's trefoil is the mirror of the katlas trefoil...
 
 TO RESOLVE CONFUSION:
-- katlas is the bottom line for conventions. this calculator will work with the given formula according to what aligns with katlas
+- regina is the bottom line for conventions. this calculator will work with the given formula according to what aligns with regina
+- katlas seems to essentially be if you plug in q^{-1} into the regina Jones Poly 

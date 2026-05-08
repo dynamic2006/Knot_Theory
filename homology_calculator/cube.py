@@ -1,5 +1,5 @@
 import regina
-from utils import *
+from utils import get_knot, crossingport_to_vertexidx, strand_to_crossing_and_type, strand_endpoint_to_vertexidx
 
 class DSU:
 
@@ -54,6 +54,12 @@ class Cube:
     
     def get_knot(self):
         return self.knot
+    
+    def get_crossings(self):
+        return self.crossings
+    
+    def get_n(self):
+        return self.n
     
     # ==== the good stuff ====
     
@@ -147,5 +153,6 @@ class Cube:
             self.print_state(state)
             print()
 
-K = Cube("eabcdbadcvbZa")
-K.print_cube()
+# Usage
+# K = Cube("eabcdbadcvbZa")
+# K.print_cube()

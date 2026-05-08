@@ -1,408 +1,292 @@
 import regina
 from cube import Cube
 from kalgebra import multiply, comultiply
-
-# being able to index on row and col makes life easier
-# so that we can just do cols[col][row] = coeff
-def sparse_entries_to_cols(M, num_cols):
-    """
-    Convert: M[col] = [(row, coeff), ...]
-    into: cols[col] = {row: coeff}
-    """
-    cols = []
-    for col in range(num_cols):
-        col_dict = {}
-        for row, coeff in M.get(col, []):
-            col_dict[row] = col_dict.get(row, 0) + coeff
-            if col_dict[row] == 0:
-                del col_dict[row] # need to delete so pivoting works
-        cols.append(col_dict)
-    return cols
-
-# compute how many columns are linearly indep
-def sparse_rank_q(cols):
-    """
-    Sparse Column Reduction
-    Computes rank over Q
-    cols: list of dicts {row : coeff}
-    """
-    pivots = {} # carrying out gaussian elimination
-    rank = 0
-
-    for col in cols:
-        col = dict(col) # copy so we don't modify og
-        while col:
-            pivot_row = max(col.keys())
-            # if we find a new indep col
-            if pivot_row not in pivots:
-                pivots[pivot_row] = col
-                rank+=1
-                break
-            
-            # otherwise reduce
-            pivot_col = pivots[pivot_row]
-            a = col[pivot_row]
-            b = pivot_col[pivot_row]
-
-            # b*col - a*pivot_col ==> col
-            new_col = {}
-            for r, v in col.items():
-                new_col[r] = new_col.get(r, 0) + b*v
-            for r, v in pivot_col.items():
-                new_col[r] = new_col.get(r,0) - a*v
-            col = {r : v for r,v in new_col.items() if v != 0}
-    
-    return rank
+from utils import crossingport_to_vertexidx
+from fractions import Fraction
 
 class KhovanovComplex:
-    
+
     def __init__(self, code):
+        
         self.cube = Cube(code)
-        self.n = self.cube.n
-        self.state_circles = {}
-        self.state_basis = {}
+        self.knot = self.cube.get_knot()
+        self.crossings = self.cube.get_crossings()
+        
+        self.state_circles = {} # {key: state, value: [circles]}
+        self.state_basis_vectors = {} # {key: state, value: [labeling tuples]}
+        self.chain_basis = {} # {key: (i,j), value: [(state, labeling tuple)]}
+        self.quantum_gradings_in_degree = {} # {key: i, value: {j}}
+        self.vertexidx_to_statecircle = {} 
+        # vertexidx_to_statecircle[state][vertexidx] = circleidx
+        # so vertexidx belongs to circle: state_circles[state][circleidx]
 
-        self.n_pos = 0
-        self.n_neg = 0
+        self.positive_crossings = []
+        self.negative_crossings = []
 
-        for c in range(self.n):
-            if self.cube.knot.crossing(c).sign() > 0:
-                self.n_pos += 1
+        self.setup()
+
+    # ==== SETUP / HELPER FUNCTIONS ====
+
+    def setup(self):
+        """
+        Setup for the cube that we build our chain complex on
+        """
+        # initialize postive and negative crossings
+        for crossingidx in range(self.crossings):
+            if self.knot.crossing(crossingidx).sign() == 1:
+                self.positive_crossings.append(crossingidx)
             else:
-                self.n_neg += 1
+                self.negative_crossings.append(crossingidx)
 
-    # A basis vector (state, labels)
-    # has bigrading (i,j)
-    # where i = one bits in state, j = this function return value
-    def quantum_grading(self, state, labels):
-        """
-        Quantum grading j
-        Convention:
-        0 = 1 ==> degree +1
-        1 = X ==> degree -1
-        """
-        i = state.bit_count()
-        k = len(labels)
-        num_X = sum(labels)
-        label_degree = k - 2*num_X
-        return -(label_degree + i + self.n_pos - 2*self.n_neg)
-
-    def cache_state_circles(self, state):
-        """
-        Returns list of circles for given state
-        """
-        if state not in self.state_circles:
-            self.state_circles[state] = self.cube.get_circles(state)
-        return self.state_circles[state]
+        self.fill_state_circles()
+        self.fill_state_basis()
+        self.fill_chain_basis()
     
-    def get_basis_for_state(self, state):
+    def homological_grading(self, state):
+        return state.bit_count() - len(self.negative_crossings)
+    
+    def quantum_grading(self, state, labeling):
+        vminus = sum(labeling) # number of X's (X has degree -1)
+        vplus = len(labeling) - vminus # number of 1's is just the other circs
+        return state.bit_count() + vplus - vminus + len(self.positive_crossings) - 2*len(self.negative_crossings)
+
+    def fill_state_circles(self):
+        for state in range(2**self.crossings):
+            self.vertexidx_to_statecircle[state] = {}
+            state_circles = self.cube.get_circles(state)
+            self.state_circles[state] = state_circles
+            for circleidx, circle in enumerate(state_circles):
+                for vertexidx in circle:
+                    self.vertexidx_to_statecircle[state][vertexidx] = circleidx
+
+    def fill_state_basis(self):
+        for state in range(2**self.crossings):
+            circle_count = len(self.state_circles[state])
+            # can label each circle with 1 (rep'd by 0) or X (rep'd by 1)
+            labelings = []
+            for labels in range(2**circle_count):
+                labels_tuple = tuple((labels>>i) & 1 for i in range(circle_count))
+                labelings.append(labels_tuple)
+            self.state_basis_vectors[state] = labelings
+
+    def fill_chain_basis(self):
         """
-        Returns basis: 
-        list of basis vectors (each circle can be 1 or X assigned)
+        Returns list of all basis vectors with state info (labeling tuples) from homological grading i and quantum grading j.
         """
-        if state in self.state_basis:
-            return self.state_basis[state]
+        for state in range(2**self.crossings):
+            for labeling in self.state_basis_vectors[state]:
+                i = self.homological_grading(state)
+                j = self.quantum_grading(state, labeling)
+                if i not in self.quantum_gradings_in_degree:
+                    self.quantum_gradings_in_degree[i] = set()
+                self.quantum_gradings_in_degree[i].add(j)
+                if (i, j) not in self.chain_basis:
+                    self.chain_basis[(i,j)] = []
+                self.chain_basis[(i,j)].append((state, labeling))
+                
+    # ==== EDGE LOGIC ====
+
+    def get_edge_map_info(self, state, crossingidx):
+        """
+        Edge is srcstate -> deststate s.t. crossing at crossingidx changes 0->1.
         
-        # we have k circles in this state
-        k = len(self.cache_state_circles(state)) 
-        basis = []
-
-        for labels in range(pow(2, k)):
-            # recall convention that 0=>1 and 1=>X
-            # we generate all possible labeling assignments to circles
-            # basis is the list of all of these for a given state
-            labels_tuple = tuple((labels>>i) & 1 for i in reversed(range(k)))
-            basis.append((state, labels_tuple))
-        
-        self.state_basis[state] = basis
-        return basis
-    
-    def get_chain_basis_for_degree(self, degree):
+        Returns:
+            ("merge", src_circ_a, src_circ_b, dest_circ)
+        or
+            ("split", src_circ, dest_circ_a, dest_circ_b)
         """
-        Combines all parts of the cube that are together
-        ie, have same degree/height, giving full chain basis
-        """
-        basis = []
-        for state in range(1<<self.n):
-            if state.bit_count() == degree:
-                basis.extend(self.get_basis_for_state(state))
-        return basis
-    
-    def get_chain_basis_for_bigrading(self, i, j):
-        basis = []
-        for basis_vector in self.get_chain_basis_for_degree(i):
-            state, labels = basis_vector
-            if self.quantum_grading(state, labels) == j:
-                basis.append(basis_vector) # narrow down from j restriction
-        return basis
-    
-    def get_quantum_gradings_in_degree(self, i):
-        qs = set()
-        for state, labels in self.get_chain_basis_for_degree(i):
-            qs.add(self.quantum_grading(state, labels))
-        return sorted(qs)
-    
-    def get_state_from_resolving_crossing(self, state, crossing):
-        return state | (1<<crossing)
-    
-    def get_edge_kind(self, state, crossing):
-        
-        src_state = state
-        dest_state = self.get_state_from_resolving_crossing(state, crossing)
-        src_circles = self.cache_state_circles(src_state)
-        dest_circles = self.cache_state_circles(dest_state)
 
-        if len(dest_circles) == len(src_circles)-1:
-            return "merge"
-        elif len(dest_circles) == len(src_circles)+1:
-            return "split"
+        srcstate = state
+        deststate = srcstate | (1<<crossingidx)
 
-    def get_vertex_to_circle_map(self, state):
-        circles = self.cache_state_circles(state)
-        vertex_to_circle = {}
-        for idx, circle in enumerate(circles):
-            for vertex in circle:
-                vertex_to_circle[vertex] = idx
-        return vertex_to_circle
-
-    def get_edge_map_info(self, state, crossing):
-        """
-        Returns details for what circles are involved in crossing resolution.
-        merge edge: ("merge", src_circ_a, src_circ_b, dest_circ)
-        split edge: ("split", src_circ, dest_circ_a, dest_circ_b)
-        """
-        dest_state = self.get_state_from_resolving_crossing(state, crossing)
-        kind = self.get_edge_kind(state, crossing)
-        src_vertex_to_circ_map = self.get_vertex_to_circle_map(state)
-        dest_vertex_to_circ_map = self.get_vertex_to_circle_map(dest_state)
-
-        # the vertices of our concern -- the ones at this crossing!
-        vertices = [
-            self.cube.get_vertex_id(crossing, 0),
-            self.cube.get_vertex_id(crossing, 1),
-            self.cube.get_vertex_id(crossing, 2),
-            self.cube.get_vertex_id(crossing, 3)
+        critical_vertices = [
+            crossingport_to_vertexidx(crossingidx, port)
+            for port in range(4)
         ]
 
-        src_circs = sorted({src_vertex_to_circ_map[v] for v in vertices})
-        dest_circs = sorted({dest_vertex_to_circ_map[v] for v in vertices})
+        src_circs = {
+            self.vertexidx_to_statecircle[srcstate][v]
+            for v in critical_vertices
+        }
+        dest_circs = {
+            self.vertexidx_to_statecircle[deststate][v]
+            for v in critical_vertices
+        }
 
-        if kind == "merge":
-            return ("merge", src_circs[0], src_circs[1], dest_circs[0])
-        else:
-            return ("split", src_circs[0], dest_circs[0], dest_circs[1])
-    
-    def get_src_to_dest_circs_map(self, state, crossing):
-        dest_state = self.get_state_from_resolving_crossing(state, crossing)
-        src_circs = self.cache_state_circles(state)
-        vertex_to_circ_map = self.get_vertex_to_circle_map(dest_state)
-
-        src_to_dest_circs_map = {}
-
-        for i, circ in enumerate(src_circs):
-            dest_circs = {vertex_to_circ_map[v] for v in circ}
-            src_to_dest_circs_map[i] = dest_circs
-
-        return src_to_dest_circs_map
-
-    # whole point of this is to make cube circle labeling cohesive globally
-    # so later when we build the sparse matrix
-    def apply_edge_map(self, state, crossing, labels):
+        if len(src_circs) == 2 and len(dest_circs) == 1:
+            # two circles merged into one
+            a, b = sorted(src_circs)
+            dest = next(iter(dest_circs))
+            return ("merge", a, b, dest)
+        elif len(src_circs) == 1 and len(dest_circs) == 2:
+            # one circle split into two
+            a, b = sorted(dest_circs)
+            src = next(iter(src_circs))
+            return ("split", src, a, b)
+                
+    def apply_edge_map(self, state, labeling, crossingidx):
         """
-        Apply edge map to one basis vector:
-        - at starting state
-        - resolve crossing
-        Returns list of (coefficient, dest_labels)
+        Applies edge map from srcstate -> deststate s.t. 
+        crossing at crossingidx changes 0->1.
+
+        Returns:
+            (deststate, [(coeff, dest_labeling)])
         """
-        dest_state = self.get_state_from_resolving_crossing(state, crossing)
-        info = self.get_edge_map_info(state, crossing)
+
+        srcstate = state
+        deststate = srcstate | (1<<crossingidx)
+        info = self.get_edge_map_info(state, crossingidx)
+
         kind = info[0]
-        src_to_dest_circs_map = self.get_src_to_dest_circs_map(state, crossing)
-        dest_circ_count = len(self.cache_state_circles(dest_state))
-
-        dest_results = []
+        results = []
 
         if kind == "merge":
-            _, a, b, c = info
-            results = multiply(labels[a], labels[b])
-            for coeff, merged_label in results:
-                dest_labels = [None]*dest_circ_count
-                # Handle unchanged circles
-                for src_circ, dest_circs in src_to_dest_circs_map.items():
-                    if src_circ == a or src_circ == b:
-                        continue # this was a CHANGED circle
-                    dest_circ = next(iter(dest_circs))
-                    dest_labels[dest_circ] = labels[src_circ] # inherits label from src_circ
-                dest_labels[c] = merged_label # Handle changed circles
-                dest_results.append((coeff, tuple(dest_labels)))
-            
-        if kind == "split":
-            _, a, b, c = info
-            results = comultiply(labels[a])
-            for coeff, split_label in results:
-                dest_labels = [None]*dest_circ_count
-                # Handle unchanged circles
-                for src_circ, dest_circs in src_to_dest_circs_map.items():
-                    if src_circ == a:
-                        continue # this was a CHANGED circle
-                    dest_circ = next(iter(dest_circs))
-                    dest_labels[dest_circ] = labels[src_circ]
-                dest_labels[b] = split_label[0]
-                dest_labels[c] = split_label[1]
-                dest_results.append((coeff, tuple(dest_labels)))
 
-        return dest_results
+            _, src_a, src_b, dest = info
+            dest_labeling = [None] * len(self.state_circles[deststate])
 
-    # see Bar-Natan p.343  ==> we need this so every square face anticommutes
-    # d_j d_i = - d_i d_j
-    def cube_sign(self, state, crossing):
-        ones_before = (state & ((1<<crossing)-1)).bit_count()
-        return -1 if ones_before%2 else 1
+            # handle unchanged circles
+            for srcCircidx, srcCirc in enumerate(self.state_circles[srcstate]):
+                if srcCircidx == src_a or srcCircidx == src_b:
+                    continue
+                representative_vertexidx = srcCirc[0]
+                destCircidx = self.vertexidx_to_statecircle[deststate][representative_vertexidx]
+                dest_labeling[destCircidx] = labeling[srcCircidx]
 
-    def differential_sparse(self, degree):
+            label_a = labeling[src_a]
+            label_b = labeling[src_b]
+
+            for res_label in multiply(label_a, label_b):
+                dest_labeling[dest] = res_label
+                results.append(tuple(dest_labeling))
+
+        elif kind == "split":
+
+            _, src, dest_a, dest_b = info
+            dest_labeling = [None] * len(self.state_circles[deststate])
+
+            # handle unchanged circles
+            for srcCircidx, srcCirc in enumerate(self.state_circles[srcstate]):
+                if srcCircidx == src:
+                    continue
+                representative_vertexidx = srcCirc[0]
+                destCircidx = self.vertexidx_to_statecircle[deststate][representative_vertexidx]
+                dest_labeling[destCircidx] = labeling[srcCircidx]
+
+            label = labeling[src]
+
+            for res_label_a, res_label_b in comultiply(label):
+                dest_labeling[dest_a] = res_label_a
+                dest_labeling[dest_b] = res_label_b
+                results.append(tuple(dest_labeling))
+
+        return results
+
+    def edge_sign(self, state, crossingidx):
         """
-        Builds sparse matrix for degree: C_degree -> C_{degree+1}
-        Returns : M, num_rows, num_cols
-        M[col] = list of (row, coeff)
+        To make anticommutative cube faces: (-1)^{#1-bits before crossingidx}
         """
-        src_basis = self.get_chain_basis_for_degree(degree)
-        dest_basis = self.get_chain_basis_for_degree(degree+1)
-
-        dest_basis_to_rownum_map = {}
-        for row, basis_vector in enumerate(dest_basis):
-            dest_basis_to_rownum_map[basis_vector] = row
-
-        M = {}
-
-        for col, (state, labels) in enumerate(src_basis):
-            entries = []
-            for crossing in range(self.n):
-                # if valid edge in cube
-                if((state>>crossing) & 1) == 0:
-                    dest_state = self.get_state_from_resolving_crossing(state, crossing)
-                    dest_results = self.apply_edge_map(state, crossing, labels)
-
-                    sign = self.cube_sign(state, crossing)
-                    for coeff, dest_labels in dest_results:
-                        dest_basis_vector = (dest_state, dest_labels)
-                        row = dest_basis_to_rownum_map[dest_basis_vector]
-                        entries.append((row, sign*coeff))
-            if entries:
-                M[col] = entries
-        
-        return M, len(dest_basis), len(src_basis)
+        count = 0
+        for k in range(crossingidx):
+            count += (state >> k) & 1
+        return -1 if count%2 else 1
     
-    def differential_sparse_bigraded(self, i, j):
+    # ==== SPARSE MATRIX ====
+
+    def build_differential_sparse_matrix(self, i, j):
         """
-        Builds sparse matrix for degree: C_{i,j} -> C_{i+1, j}
-        Where i = degree input, j is quantum grading
-        Returns : M, num_rows, num_cols
-        M[col] = list of (row, coeff)
+        Builds d: C^{i,j} -> C^{i+1,j} over Q.
+
+        Returns:
+            M, cSrc, cDest
+            M[col] = {key : row, value : coeff}
+            cSrc = C^{i,j} chain basis
+            cDest = C^{i+1,j} chain basis
         """
-        src_basis = self.get_chain_basis_for_bigrading(i, j)
-        dest_basis = self.get_chain_basis_for_bigrading(i+1, j)
-
-        dest_basis_to_rownum_map = {}
-        for row, basis_vector in enumerate(dest_basis):
-            dest_basis_to_rownum_map[basis_vector] = row
-
-        M = {}
-
-        for col, (state, labels) in enumerate(src_basis):
-            entries = []
-            for crossing in range(self.n):
-                # if valid edge in cube
-                if((state>>crossing) & 1) == 0:
-                    dest_state = self.get_state_from_resolving_crossing(state, crossing)
-                    dest_results = self.apply_edge_map(state, crossing, labels)
-
-                    sign = self.cube_sign(state, crossing)
-                    for coeff, dest_labels in dest_results:
-                        dest_basis_vector = (dest_state, dest_labels)
-                        row = dest_basis_to_rownum_map[dest_basis_vector]
-                        entries.append((row, sign*coeff))
-            if entries:
-                M[col] = entries
         
-        return M, len(dest_basis), len(src_basis)
+        cSrc = self.chain_basis.get((i,j), [])
+        cDest = self.chain_basis.get((i+1,j), [])
 
-    def rank_differential_q(self, degree):
-        M, num_rows, num_cols = self.differential_sparse(degree)
-        cols = sparse_entries_to_cols(M, num_cols)
-        return sparse_rank_q(cols)
+        # literally cuz iirc map lookup is considerably faster than list
+        cDestMap = {
+            basis_vector : idx 
+            for idx, basis_vector in enumerate(cDest)
+        }
+
+        M = []
+
+        for state, labeling in cSrc:
+            col = {}
+            for crossingidx in range(self.crossings):
+                if ((state>>crossingidx) & 1) == 1:
+                    continue
+                coeff = Fraction(self.edge_sign(state, crossingidx))
+                deststate = state | (1<<crossingidx)
+                for dest_labeling in self.apply_edge_map(state, labeling, crossingidx):
+                    basis_vector = (deststate, dest_labeling)
+                    if basis_vector not in cDestMap:
+                        continue
+                    row = cDestMap[basis_vector]
+                    col[row] = col.get(row, Fraction(0)) + coeff
+                    if col[row] == 0:
+                        del col[row] # sparsify!
+            M.append(col)
+
+        return M, cSrc, cDest
     
-    def rank_differential_bigraded_q(self, i, j):
-        M, num_rows, num_cols = self.differential_sparse_bigraded(i, j)
-        cols = sparse_entries_to_cols(M, num_cols)
-        return sparse_rank_q(cols)
+    # ==== LINALG | GAUSSIAN ELIMINATION ====
 
-    def get_free_rank(self, degree):
+    def get_differential_rank(self, M):
         """
-        Free rank of H_degree
-        [IGNORING TORSION]
+        M is a sparse matrix, where entries are fractions
+        M[col][row] = coeff
+
+        Proceed via gaussian elimination over Q.
         """
-        C_dim = len(self.get_chain_basis_for_degree(degree))
+
+        pivots = {}
+
+        for col in M:
+            col = dict(col) # copy construct so we don't mess with og
+            while col:
+                pivot_row = max(col.keys())
+                pivot_coeff = col[pivot_row]
+                if pivot_row not in pivots:
+                    # found a new independent
+                    inv = Fraction(1,1) / pivot_coeff
+                    for r in list(col.keys()):
+                        col[r] *= inv
+                        if col[r] == 0:
+                            del col[r] # sparsify!
+                    pivots[pivot_row] = col
+                    break
+                pivot_col = pivots[pivot_row]
+                factor = col[pivot_row]
+                for r, val in pivot_col.items():
+                    col[r] = col.get(r, Fraction(0)) - factor * val
+                    if col[r] == 0:
+                        del col[r] # sparsify!
         
-        # check if we've gone off the right edge
-        if degree < self.n:
-            rank_d_i = self.rank_differential_q(degree)
-        else:
-            rank_d_i = 0
-        
-        # check if going left goes off the left edge
-        if degree > 0:
-            rank_d_prev = self.rank_differential_q(degree-1)
-        else:
-            rank_d_prev = 0
-        
-        return C_dim - rank_d_i - rank_d_prev
+        return len(pivots)
+
+    # ==== HOMOLOGY CALCULATION ====
     
-    def get_kh_rank(self, i, j):
-        """
-        Kh rank of H_degree
-        [BIGRADED]
-        [IGNORING TORSION]
-        """
-        C_dim = len(self.get_chain_basis_for_bigrading(i,j))
-        
-        # check if we've gone off the right edge
-        if i < self.n:
-            rank_d_i = self.rank_differential_bigraded_q(i,j)
-        else:
-            rank_d_i = 0
-        
-        # check if going left goes off the left edge
-        if i > 0:
-            rank_d_prev = self.rank_differential_bigraded_q(i-1, j)
-        else:
-            rank_d_prev = 0
-        
-        return C_dim - rank_d_i - rank_d_prev
+    def homology_rank(self, i, j):
+        Cij_dim = len(self.chain_basis.get((i, j), []))
+        d_cur, _, _ = self.build_differential_sparse_matrix(i, j)
+        d_prev, _, _ = self.build_differential_sparse_matrix(i - 1, j)
+        rank_d_cur = self.get_differential_rank(d_cur)
+        rank_d_prev = self.get_differential_rank(d_prev)
+
+        return Cij_dim - rank_d_cur - rank_d_prev
     
-    def print_free_rank(self):
-        for degree in range(self.n+1):
-            print(f"rank H_{degree} = {self.get_free_rank(degree)}")
-
-    def print_bigraded_homology(self):
-        all_qs = set()
-
-        for i in range(self.n + 1):
-            all_qs.update(self.get_quantum_gradings_in_degree(i))
-
-        for i in range(self.n + 1):
-            for j in sorted(all_qs):
-                r = self.get_kh_rank(i, j)
+    def print_homology(self):
+        for i, js in sorted(self.quantum_gradings_in_degree.items()):
+            for j in sorted(js):
+                r = self.homology_rank(i, j)
                 if r != 0:
                     print(f"rank Kh^({i},{j}) = {r}")
 
-
-K = KhovanovComplex("eabcdbadcvbZa")
-
-print(K.cube.knot)
-print("n =", K.n)
-print("n_pos =", K.n_pos, "n_neg =", K.n_neg)
-
-for state in range(1 << K.n):
-    print(format(state, f"0{K.n}b"), "circles =", K.cube.count_circles(state))
-
-K.print_bigraded_homology()
+# Usage
+# K = KhovanovComplex("dabcabcv-")
+# K.print_homology()
