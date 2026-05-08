@@ -432,7 +432,7 @@ class KhovanovComplex:
     def print_full_homology(self):
         for i, js in sorted(self.quantum_gradings_in_degree.items()):
             for j in sorted(js):
-                self.print_homology(self, i, j)
+                self.print_homology(i, j)
     
     def print_full_homology_generators(self):
         for i, js in sorted(self.quantum_gradings_in_degree.items()):
@@ -441,4 +441,6 @@ class KhovanovComplex:
 
 # Usage
 # K = KhovanovComplex("eabcdbadcvbZa")
+# K.print_full_homology()
+# print("===========================")
 # K.print_full_homology_generators()
