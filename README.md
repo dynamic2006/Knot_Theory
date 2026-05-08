@@ -1,5 +1,5 @@
 1. `git clone` this repo
-2. Install Regina
+2. Install Regina: https://regina-normal.github.io/#download
 3. To Run:
 ```
 cd .../Knot_Theory/homology_calculator
