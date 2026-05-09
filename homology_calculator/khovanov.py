@@ -353,7 +353,7 @@ class KhovanovComplex:
                             del v[k] # sparsify!
                     pivots[pivot] = v
                     break
-                for k, val in pivots[pivot]:
+                for k, val in pivots[pivot].items():
                     v[k] = v.get(k, Fraction(0)) + (-coeff)*val
                     if v[k] == 0:
                         del v[k] # sparsify!
@@ -421,11 +421,11 @@ class KhovanovComplex:
                 state, labeling = cCur[basis_idx]
                 bits = format(state, f"0{self.crossings}b")
                 prettylabeling = [None]*len(labeling)
-                for i, val in enumerate(labeling):
+                for idx, val in enumerate(labeling):
                     if val == 0:
-                        prettylabeling[i] = '1'
+                        prettylabeling[idx] = '1'
                     else:
-                        prettylabeling[i] = 'X'
+                        prettylabeling[idx] = 'X'
                 print(f"  {coeff} * state={bits}, labeling={prettylabeling}")
         print()
 
