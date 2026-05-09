@@ -1,4 +1,5 @@
 import regina
+from config import CONVENTION
 from cube import Cube
 from kalgebra import multiply, comultiply
 from utils import crossingport_to_vertexidx
@@ -408,12 +409,18 @@ class KhovanovComplex:
     def print_homology(self, i, j):
         r = self.homology_rank(i,j)
         if r != 0:
+            if CONVENTION == "katlas":
+                i = -i
+                j = -j
             print(f"rank Kh^({i},{j}) = {r}")
 
     def print_homology_generators(self, i, j):
         survivors, cCur = self.homology_generators(i,j)
         if len(survivors) == 0:
             return
+        if CONVENTION == "katlas":
+            i = -i
+            j = -j
         print(f"Kh^({i},{j}) has {len(survivors)} generators")
         for genidx, gen in enumerate(survivors):
             print(f"generator {genidx}:")
@@ -440,7 +447,7 @@ class KhovanovComplex:
                 self.print_homology_generators(i, j)
 
 # Usage
-# K = KhovanovComplex("eabcdbadcvbZa")
+# K = KhovanovComplex("dabcabcv-")
 # K.print_full_homology()
 # print("===========================")
 # K.print_full_homology_generators()
